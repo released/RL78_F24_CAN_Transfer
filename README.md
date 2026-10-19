@@ -1,42 +1,116 @@
-# RL78/F24 MCU CAN device Transfer
+# RL78/F24 Custom Transfer Reference Target
 
-非破壞 Classical CAN500K benchmark，使用 Custom Transfer v1 格式：
-standard request710/response711、8-byte request/reply、sequence／CRC8／echo／pattern／counter。
-Tool 使用 CAN TAB 的 Custom Transfer，而不是 CAN Upgrade。
-TargetF24B，短版 identity 只回8字元 part prefix；Boot/App INFO 才提供完整 part。
+This CS+ project provides the non-destructive `Custom Transfer` workflow.
+It verifies PC -> MCU CAN host -> CAN -> MCU device request/response traffic
+without erasing or writing application flash.
 
-使用本專案自己的 SC 與相鄰 Boot 的 `common`，4MHz X1、P10/P11 CAN、P12 STB LOW，
-診斷 UART P15/P16 115200。
-細節見 [F24 device 工程指南](../RL78_F24_Boot_loader_CAN/README.md)。
-Transfer 是獨立整機映像，會取代 Boot；不是 Boot 上的 App，不可當更新 BIN。
-先以燒錄器測 Transfer；確認電氣層後再換裝 Boot + App。
-正常 discovery／Transfer Test 的 Tool 與 MCU UART 紀錄見
-[Custom Transfer 操作範例](https://released.github.io/slide_isp_tool_for_RL78/#f24-custom-transfer-example)。
-CAN 波形量測、故障注入與恢復另行驗證。
+## Public examples and checkout layout
+
+- [This CAN Transfer benchmark](https://github.com/released/RL78_F24_CAN_Transfer).
+- [Required sibling Boot project](https://github.com/released/RL78_F24_Boot_loader_CAN).
+- [Matching CAN App project](https://github.com/released/RL78_F24_Boot_loader_CAN_app).
+- [Tool operating guide](https://released.github.io/slide_isp_tool_for_RL78/).
+- [Boot/App porting guide (zh-TW)](https://released.github.io/slide_boot_loader_for_RL78/#boot-app-porting).
+
+Keep the three checkouts under the same parent using their repository names;
+remove the `-main` suffix after ZIP extraction. Transfer uses its own Smart
+Configurator output and the Boot project `common/` sources and build helpers.
+The Transfer checkout alone is not self-contained.
+
+Transfer is a standalone programmer-installed image, not a Boot-aware App or
+an update BIN. Installation replaces the Boot at the reset/vector region.
+After the transport test, install Boot/App for the firmware-update workflow.
+
+## Hardware and CAN settings
+
+| Item | Setting |
+| --- | --- |
+| MCU | RL78/F24 R7F124FPJ5xFB; 256 KiB code flash, 24 KiB RAM |
+| Clock | X1 4 MHz -> PLL 80 MHz -> CPU/CAN 40 MHz |
+| CAN | Classical, standard 11-bit IDs, 500 kbit/s |
+| Pins | P10 TX / P11 RX; P12 LOW for normal transceiver operation |
+| Request/response | `0x710` / `0x711`; exact filter `0x710/0x7FF` |
+| Debug UART0 | 115200 8-N-1, P15 TX / P16 RX |
+| Identity | Target `0xF24B`; DEVICE_INFO returns an eight-character part prefix |
+
+Use CAN TAB -> `Custom Transfer`, not `CAN Upgrade`. Verify the fitted
+transceiver supply, standby, common ground, termination and matching bitrate.
+
+## UART comparison trace
+
+`CAN_TRANSFER_UART_TRACE_ENABLE` in `can_transfer_config.h` defaults to `1U`.
+The main loop prints complete request/response frames. A PING example is:
+
+```text
+TRACE CT RX id=0x710 dlc=8 data=[A5 01 01 02 12 34 56 9A] seq=1 command=0x02 crc=OK
+TRACE CT TX id=0x711 dlc=8 data=[5A 01 01 02 12 34 56 DE] seq=1 command=0x02 crc=OK
+```
+
+The final byte is CRC8/ATM over bytes 0..6; compare actual captured bytes.
+`CAN_TransferProtocol_Process()` runs in the main loop. Interrupt handlers
+do not parse requests, print text or wait for UART.
+
+Startup also reports initialization details:
+
+```text
+clock status: OK; X1=4M PLL80 CPU/CAN40
+CAN init: OK result=0x0000 stage=<stage> global_status=<raw status> channel_status=<raw status>
+CAN config: Classical 500K request=0x710 response=0x711 filter=0x710/0x7FF STB=P12_LOW
+hardware_init finish
+```
+
+`result=0x0000` means initialization succeeded. Record actual stage/status
+values; placeholders are not numeric expectations. `STB=P12_LOW` describes
+the MCU latch, not a transceiver-voltage measurement.
+
+The main loop captures/clears Classical CAN flags and updates GET_STATS
+warning/passive/bus-off counters and last flags. UART summaries are throttled
+to once per 250 ms. Repeated flags can coalesce; counters describe captured
+observations, not every physical error. See [Custom Transfer diagnostics](https://released.github.io/slide_isp_tool_for_RL78/#transfer-diagnostics).
+
+For a comparison capture:
+
+1. Build/install `DefaultBuild/RL78_F24_CAN_Transfer.hex` with the programmer.
+2. Capture device UART0 at 115200 baud.
+3. Probe Host in Tool, select Custom Transfer, enable `Detailed trace (slower)`
+   and `Start Log`, then discover and run Transfer Test.
+4. Match PC TX to device RX and device TX to PC RX: ID, DLC, all eight bytes,
+   sequence, command and CRC. Timestamps belong to different clocks.
+
+Verified Tool/UART captures are in the [F24 device Transfer example](https://released.github.io/slide_isp_tool_for_RL78/#f24-custom-transfer-example).
+For throughput/queue/timing measurements, set the trace define to `0U` and
+clean rebuild. Error capture/GET_STATS remain active; blocking UART text
+otherwise changes main-loop timing.
+
+## Build and artifacts
+
+Run from this Transfer directory with Windows PowerShell 5.1 and CS+/CC-RL:
 
 ```powershell
 ..\RL78_F24_Boot_loader_CAN\build.ps1 -Kind transfer
 ```
 
-## UART 與錯誤統計
+The helper prepares the project, invokes a clean build, checks the CS+ summary
+and packages the HEX. No Python or SRecord installation is required.
 
-啟動時列出 clock 設定、CAN 初始化 result／stage、global／channel status、
-request／response／filter 及實際 P12 output latch。
-`STB=P12_LOW` 表示 MCU 設定的輸出值，不是 transceiver 供電或電壓的量測。
+| File | Purpose |
+| --- | --- |
+| `DefaultBuild/RL78_F24_CAN_Transfer.hex` | Standalone programmer image; retained for Git distribution |
+| `DefaultBuild/RL78_F24_CAN_Transfer.mot` / `.map` | Local compiler/section-check inputs; regenerated by build |
 
-主迴圈擷取 Classical CAN 錯誤旗標，更新 GET_STATS 的 warning／passive／bus-off
-計數及 last flags；UART 錯誤摘要最多每 250 ms 輸出一次。
-硬體旗標會合併重複事件，counter 表示擷取次數，並非每一次實體錯誤的精確總數。
-啟動欄位、stage 與判讀方式集中於 [Custom Transfer 診斷](https://released.github.io/slide_isp_tool_for_RL78/#transfer-diagnostics)。
+Local `tmp/` outputs are excluded. [Publication](https://github.com/released/simple_renesas_isp_tool/blob/main/docs/GITHUB_PUBLISH_zh-TW.md)
+archives other DefaultBuild files without deleting the recovery copies.
 
-`CAN_TRANSFER_UART_TRACE_ENABLE` 預設為 `1U`。
-量測吞吐量時設為 `0U` 後重建，以排除 115200-baud 封包／錯誤文字輸出的影響；
-錯誤擷取與 GET_STATS 計數仍保留。
+## Verification requirements
 
-維護者可使用既有 MSVC 開發環境執行離線 register／protocol 模型；一般韌體建置不需要 MSVC：
+After building all three projects, optional register/protocol models use the
+existing MSVC development environment:
 
 ```powershell
 ..\RL78_F24_Boot_loader_CAN\test.ps1 -TransferModels
 ```
 
-模型涵蓋初始化階段、旗標清除、統計與 timer wrap；實板 CAN／ACK、故障注入與恢復另行驗證。
+This entry also checks Boot/App artifacts. Models cover initialization stages,
+flag capture/clear, statistics, trace settings and timer wrap. Normal discovery
+and Transfer Test are verified; waveform measurements, sustained stress and
+injected-fault recovery require their own board records.

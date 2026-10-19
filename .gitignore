@@ -1,0 +1,6 @@
+# Keep only the standalone programmer delivery in DefaultBuild.
+/DefaultBuild/*
+!/DefaultBuild/RL78_F24_CAN_Transfer.hex
+/tmp/
+*.mtud
+QualityReport*.txt
