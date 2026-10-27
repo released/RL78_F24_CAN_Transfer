@@ -114,3 +114,12 @@ This entry also checks Boot/App artifacts. Models cover initialization stages,
 flag capture/clear, statistics, trace settings and timer wrap. Normal discovery
 and Transfer Test are verified; waveform measurements, sustained stress and
 injected-fault recovery require their own board records.
+
+## User code entry
+
+`custom_func.c` provides `hardware_init()` for initialization and `loop()` for
+foreground service. Add application initialization and foreground work through
+these callbacks, retaining the existing communication service calls.
+The selected main/startup adapter owns entry and handoff. Generated peripheral
+files remain under `src/`; retain the project's MTPJ source selection when using
+Code Generator or Smart Configurator, then rebuild to validate the image and vectors.

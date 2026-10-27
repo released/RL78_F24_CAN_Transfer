@@ -7,13 +7,14 @@
  * Stages identify the last completed/failed initialization check. Result is
  * the Renesas CAN result, including WAITING for an active-state timeout.
  */
-#define TRANSFER_CAN_STAGE_CONFIG  (1U)
-#define TRANSFER_CAN_STAGE_STATE   (2U)
-#define TRANSFER_CAN_STAGE_START   (3U)
-#define TRANSFER_CAN_STAGE_ACTIVE  (4U)
-#define TRANSFER_CAN_STAGE_READY   (5U)
+#define TRANSFER_CAN_STAGE_CONFIG (1U)
+#define TRANSFER_CAN_STAGE_STATE (2U)
+#define TRANSFER_CAN_STAGE_START (3U)
+#define TRANSFER_CAN_STAGE_ACTIVE (4U)
+#define TRANSFER_CAN_STAGE_READY (5U)
 
-typedef struct {
+typedef struct
+{
     uint16_t result;
     uint16_t global_status;
     uint16_t channel_status;
