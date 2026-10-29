@@ -7,15 +7,12 @@ without erasing or writing application flash.
 ## Public examples and checkout layout
 
 - [This CAN Transfer benchmark](https://github.com/released/RL78_F24_CAN_Transfer).
-- [Required sibling Boot project](https://github.com/released/RL78_F24_Boot_loader_CAN).
+- [Matching Boot project](https://github.com/released/RL78_F24_Boot_loader_CAN).
 - [Matching CAN App project](https://github.com/released/RL78_F24_Boot_loader_CAN_app).
-- [Tool operating guide](https://released.github.io/slide_isp_tool_for_RL78/).
+- [Tool operating guide](https://released.github.io/slide_simple_renesas_isp_tool/).
 - [Boot/App porting guide (zh-TW)](https://released.github.io/slide_boot_loader_for_RL78/#boot-app-porting).
 
-Keep the three checkouts under the same parent using their repository names;
-remove the `-main` suffix after ZIP extraction. Transfer uses its own Smart
-Configurator output and the Boot project `common/` sources and build helpers.
-The Transfer checkout alone is not self-contained.
+The Transfer project includes its own SC output, HAL APIs and build helpers.
 
 Transfer is a standalone programmer-installed image, not a Boot-aware App or
 an update BIN. Installation replaces the Boot at the reset/vector region.
@@ -66,7 +63,7 @@ the MCU latch, not a transceiver-voltage measurement.
 The main loop captures/clears Classical CAN flags and updates GET_STATS
 warning/passive/bus-off counters and last flags. UART summaries are throttled
 to once per 250 ms. Repeated flags can coalesce; counters describe captured
-observations, not every physical error. See [Custom Transfer diagnostics](https://released.github.io/slide_isp_tool_for_RL78/#transfer-diagnostics).
+observations, not every physical error. See [Custom Transfer diagnostics](https://released.github.io/slide_simple_renesas_isp_tool/#transfer-diagnostics).
 
 For a comparison capture:
 
@@ -77,7 +74,7 @@ For a comparison capture:
 4. Match PC TX to device RX and device TX to PC RX: ID, DLC, all eight bytes,
    sequence, command and CRC. Timestamps belong to different clocks.
 
-Verified Tool/UART captures are in the [F24 device Transfer example](https://released.github.io/slide_isp_tool_for_RL78/#f24-custom-transfer-example).
+Verified Tool/UART captures are in the [F24 device Transfer example](https://released.github.io/slide_simple_renesas_isp_tool/#f24-custom-transfer-example).
 For throughput/queue/timing measurements, set the trace define to `0U` and
 clean rebuild. Error capture/GET_STATS remain active; blocking UART text
 otherwise changes main-loop timing.
@@ -87,7 +84,7 @@ otherwise changes main-loop timing.
 Run from this Transfer directory with Windows PowerShell 5.1 and CS+/CC-RL:
 
 ```powershell
-..\RL78_F24_Boot_loader_CAN\build.ps1 -Kind transfer
+powershell -NoProfile -ExecutionPolicy Bypass -File .uild.ps1
 ```
 
 The helper prepares the project, invokes a clean build, checks the CS+ summary
@@ -107,7 +104,7 @@ After building all three projects, optional register/protocol models use the
 existing MSVC development environment:
 
 ```powershell
-..\RL78_F24_Boot_loader_CAN\test.ps1 -TransferModels
+powershell -NoProfile -ExecutionPolicy Bypass -File .uild.ps1
 ```
 
 This entry also checks Boot/App artifacts. Models cover initialization stages,
@@ -123,3 +120,36 @@ these callbacks, retaining the existing communication service calls.
 The selected main/startup adapter owns entry and handoff. Generated peripheral
 files remain under `src/`; retain the project's MTPJ source selection when using
 Code Generator or Smart Configurator, then rebuild to validate the image and vectors.
+
+## Project layout and standalone build
+
+This project includes its own source files, configuration headers and build tools.
+A sibling Boot, App or Transfer checkout is not required to compile it.
+Keep the project directory name aligned with its `.mtpj` filename; remove a ZIP download suffix when necessary.
+Build with CS+ Rebuild, or run the local PowerShell entry:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+| Location | Responsibility |
+| --- | --- |
+| `custom_func.c` | Project initialization in `hardware_init()` and recurring work in `loop()`; runtime orchestration stays here |
+| `hal/can` | CAN service, controller driver and CAN adapter, when used by this project |
+| `hal/device` | Device, clock, peripheral and CPU handoff APIs |
+| `hal/image` | Metadata parser/profile, image validation and software CRC |
+| `hal/flash` | Flash access/geometry APIs, when required by the selected image |
+| `hal/isp` | Update/Transfer protocol and transport processing APIs |
+| Root configuration headers | Local MCU/Flash, handoff and communication contract |
+| `tools` and root PowerShell helpers | Local metadata/IRQ generation and linked-image checks |
+| `src` | Code Generator or Smart Configurator peripheral sources |
+
+Only the sources registered in this project's CS+ configuration are linked.
+Generated main/vector implementations must not become a second active entry.
+Retain the `custom_func.c` callbacks and the selected startup adapter after code generation.
+
+Boot and App each carry a local contract. Keep their MCU, Flash layout, image format,
+IRQ ABI, handoff and communication settings compatible when installing a pair.
+App releases are edited in `app_image_config.h` and `app_irq_handlers.h` in the App project.
+Rebuild the selected App to regenerate its metadata, vector table, update BIN and timing BINs.
+The App build does not read or rewrite a Boot checkout.
